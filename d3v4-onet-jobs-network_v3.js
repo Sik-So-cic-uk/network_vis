@@ -1,4 +1,4 @@
-function createJobsNetwork_dwp(svg, graph) {
+function createJobsNetwork_onet(svg, graph) {
     d3v4 = d3;
 
     let parentWidth = d3v4.select('svg').node().parentNode.clientWidth;
@@ -17,7 +17,7 @@ function createJobsNetwork_dwp(svg, graph) {
     svg.selectAll('.g-main').remove();
 
     var gMain = svg.append('g')
-        .classed('g-main', true);
+    .classed('g-main', true);
 
     var rect = gMain.append('rect')
         .attr('width', parentWidth)
@@ -41,33 +41,47 @@ function createJobsNetwork_dwp(svg, graph) {
         console.log("Graph is missing links");
         return;
     }
-
-    var nodes = {};
+    
     var i;
     for (i = 0; i < graph.nodes.length; i++) {
-        nodes[graph.nodes[i].id] = graph.nodes[i];
         graph.nodes[i].weight = 1.01;
     }
+    var nodes = graph.nodes,
+        nodeById = d3v4.map(nodes, function(d) { return d.id; }),
+        links = graph.links,
+        bilinks = [];
+    //console.log(nodes)
+
+    links.forEach(function(link) {
+        var s = link.source = nodeById.get(link.source),
+            t = link.target = nodeById.get(link.target);
+        bilinks.push([s, t]);
+    });
 
     var link = gDraw.append("g")
         .attr("class", "link")
         .selectAll("line")
-        .data(graph.links)
+        .data(links)
         .enter().append("line")
         .attr("stroke-width", function(d) { return Math.sqrt(d.value); });
+
+    //console.log(nodes)
+
+    var default_node_size_onet = 6,
+        default_node_size_over = 10;
 
     var node = gDraw.append("g")
         .attr("class", "node")
         .selectAll("circle")
-        .data(graph.nodes)
+        .data(nodes.filter(function(d) { return d.id; }))
         .enter().append("g");
 
     node.append("circle")
-        .attr("r", function(d){
+        .attr("r", function(d) {
             if ('size' in d)
                 return d.size;
-            else 
-                return 6;
+            else
+                return default_node_size_onet;
         })
         .attr("fill", function(d) { 
             if ('color' in d)
@@ -75,53 +89,68 @@ function createJobsNetwork_dwp(svg, graph) {
             else
                 return color(d.group); 
         })
+        .style("stroke", function(d) {
+            if ('color' in d)
+                return color(d.group);
+            else
+                return "#ffffff";
+        })
         .style("opacity", function(d) {
             if('alpha' in d)
                 return d.alpha
             else
-                return 1;
+                return 0.9;
         })
-        .on("click", click2)
+        .on("click", click_node)
         .on("mouseover", function(d,i) {
+            var match_score = "";
+            if('Role_Match_Score' in d) 
+                match_score = "<br/>" + d.Role_Match_Score + " %";
+            
             d3v4.select(this)
                 .transition()
-                .attr("r", 10);
+                .attr("r", default_node_size_over);
                 
             div.transition()
                 .duration(500)		
                 .style("opacity", .9);
-            div.html("<br/>"  + d.job_role + "<br/>" + d.Role_Match_Score + " %" + "<br/>")	
+
+            div.html("<br/>"  + d.job_role + match_score + "<br/>")	
                 .style("left", (d3v4.event.pageX + 15) + "px")		
                 .style("top", (d3v4.event.pageY - 10) + "px");
+
+            
         })
         .on("mouseout", function(d,i) {
-            d3v4.select(this)
+            if (!d3v4.select(this).classed("network-selected")) {
+                d3v4.select(this)
                 .transition()
                 .duration(1000)
                 .attr("r", function(d){
                     if ('size' in d)
                         return d.size;
                     else 
-                        return 6
+                        return default_node_size_onet;
                 });
-
+            }
             div.transition()
                 .duration(500)
-                .style("opacity", 0)
+                .style("opacity", 0);
         })
-        .call(d3v4.drag());   
-
+        .call(d3v4.drag());
+    
     var simulation = d3v4.forceSimulation()
         .force("link", d3v4.forceLink()
                 .id(function(d) { return d.id; })
                 .distance(function(d) { 
-                    return 30;
+                    return 15;
+                    return dist; 
                 })
               )
         .force("charge", d3v4.forceManyBody())
-        .force("center", d3v4.forceCenter(parentWidth / 2, parentHeight / 2));
-        //.force("x", d3v4.forceX(parentWidth/2))
-        //.force("y", d3v4.forceY(parentHeight/2));
+        .force("center", d3v4.forceCenter(parentWidth / 2, parentHeight / 2))
+        .force("x", d3v4.forceX())
+        .force("y", d3v4.forceY().strength(function(d){ return .30 }));
 
     simulation
         .nodes(graph.nodes)
@@ -129,7 +158,7 @@ function createJobsNetwork_dwp(svg, graph) {
 
     simulation.force("link")
         .links(graph.links);
-  
+
     function ticked() {
         // update node and line positions at every step of the force simulation
         link.attr("x1", function(d) { return d.source.x; })
@@ -138,38 +167,47 @@ function createJobsNetwork_dwp(svg, graph) {
             .attr("y2", function(d) { return d.target.y; });
 
         node.attr("transform", function(d) {
-          return "translate(" + d.x + "," + d.y + ")";
+            return "translate(" + d.x + "," + d.y + ")";
         })
     }
 
-    /*
-    function click(d) { 
-        var active = d.active? false: true,
-            newClass = active? "selected": "noselected";
-        
-        d3v4.select(this).transition()
-            .attr("class", newClass);
-        
-        d.active = true;
-    }
-    */
-    function click2() {
+    function click_node() {
         if (!d3v4.select(this).classed("network-selected")) {
             d3.selectAll('.network-selected').classed("network-selected", false)
+                .transition().attr("r", function(d){
+                    if ('size' in d)
+                        return d.size;
+                    else 
+                        return default_node_size_onet;
+                })
+                .transition().style("stroke", (d) => color(d.group));
             d3.selectAll('.network-selected').transition().attr("class", "noselected");
+            
             d3.select(this).classed("network-selected", true)
-            d3.select(this).transition().attr("class", "network-selected");
-            onClickParent(this.__data__.job_role)
+            d3.select(this).transition()
+                .style("stroke", "red")
+                .transition.style("stroke-width", 2);
+            //onClickParent(this.__data__.job_role)
         }
         else {
             d3.select(this).classed("network-selected", false);
-            d3.select(this).transition().attr("class","noselected");
+            d3.select(this).transition().attr("class", "noselected");
         }
     }
-    var texts = ['+ Use the scroll wheel to zoom',
-                 '+ Hold the mouse over a node to display the name'];
     
-    svg.selectAll('text')
+    var legend_w = 250, legend_h = 150; 
+    gDraw.selectAll('image').data([0])
+        .enter()
+        .append("svg:image")
+        .attr('xlink:href', 'data/network_legend.png')
+        .attr("x", function(d) {return parentWidth - (legend_w + 30)})
+        .attr("y", function(d) {return parentHeight - (legend_h + 20)})
+        .attr("width", legend_w)
+        .attr("height", legend_h);
+
+    var texts = ['+ Use the scroll wheel to zoom',
+                 '+ Hold the mouse over a node to display the job role name'];
+    gDraw.selectAll('text')
         .data(texts)
         .enter()
         .append('text')
@@ -177,5 +215,4 @@ function createJobsNetwork_dwp(svg, graph) {
         .attr('y', function(d,i) { return 400 + i * 20; })
         .text(function(d) { return d; });
     return graph;
-    
 };
